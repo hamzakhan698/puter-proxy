@@ -9,9 +9,10 @@ let browser;
 async function startBrowser() {
   browser = await puppeteer.launch({
     headless: true,
+    executablePath: "/usr/bin/chromium-browser",  // use system Chromium
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-  console.log("Puppeteer launched");
+  console.log("Puppeteer launched with system Chromium");
 }
 
 const app = express();
@@ -37,7 +38,6 @@ app.post("/chat", async (req, res) => {
     const page = await browser.newPage();
     await page.setUserAgent("Mozilla/5.0 (compatible; PuterProxy/1.0)");
 
-    // Load HTML with puter.js
     const html = `
       <!doctype html>
       <html>
@@ -47,11 +47,13 @@ app.post("/chat", async (req, res) => {
         </head>
         <body></body>
       </html>`;
-    await page.goto("data:text/html," + encodeURIComponent(html), { waitUntil: "load", timeout: 30000 });
+    await page.goto("data:text/html," + encodeURIComponent(html), {
+      waitUntil: "load",
+      timeout: 30000,
+    });
 
     await page.waitForFunction("window.puter !== undefined", { timeout: 30000 });
 
-    // Run puter.ai.chat inside the browser context
     const raw = await page.evaluate(async (prompt) => {
       try {
         const r = await window.puter.ai.chat(prompt, { model: "perplexity/sonar" });
@@ -79,13 +81,17 @@ app.post("/chat", async (req, res) => {
 
 process.on("SIGINT", async () => {
   console.log("Shutting down...");
-  try { if (browser) await browser.close(); } catch {}
+  try {
+    if (browser) await browser.close();
+  } catch {}
   process.exit(0);
 });
 
 startBrowser()
   .then(() => {
-    app.listen(PORT, () => console.log(`🚀 Puter proxy running on http://localhost:${PORT}`));
+    app.listen(PORT, () =>
+      console.log(`🚀 Puter proxy running on http://0.0.0.0:${PORT}`)
+    );
   })
   .catch((err) => {
     console.error("Failed to start Puppeteer:", err);
