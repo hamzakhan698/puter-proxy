@@ -30,10 +30,13 @@ app.post("/chat", async (req, res) => {
   try {
     browser = await puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      protocolTimeout: 120000 // 2 minutes max for browser protocol calls
     });
 
     const page = await browser.newPage();
+    page.setDefaultTimeout(60000); // Default 60s for all waits
+
     const html = `
       <!doctype html>
       <html>
@@ -44,7 +47,9 @@ app.post("/chat", async (req, res) => {
         <body></body>
       </html>`;
     await page.setContent(html, { waitUntil: "load" });
-    await page.waitForFunction("window.puter !== undefined", { timeout: 30000 });
+
+    // Wait up to 60s for Puter.js to load
+    await page.waitForFunction("window.puter !== undefined", { timeout: 60000 });
 
     const raw = await page.evaluate(async ({ finalPrompt, model }) => {
       try {
@@ -71,4 +76,6 @@ app.post("/chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
