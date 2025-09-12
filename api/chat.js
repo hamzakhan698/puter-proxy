@@ -22,7 +22,7 @@ export default async function handler(req, res) {
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
-      headless: chromium.headless, // ensures headless mode works on Vercel
+      headless: chromium.headless
     });
 
     const page = await browser.newPage();
