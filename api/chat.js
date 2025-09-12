@@ -11,9 +11,18 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: "Forbidden - invalid token" });
   }
 
-  const prompt = req.body.prompt || req.body.message || req.body.q;
-  if (!prompt) {
-    return res.status(400).json({ error: "Missing prompt" });
+  // Extract possible inputs
+  const { prompt, message, q, model, messages } = req.body;
+
+  // Build the final prompt
+  let finalPrompt = prompt || message || q;
+
+  if (!finalPrompt && Array.isArray(messages)) {
+    finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+  }
+
+  if (!finalPrompt) {
+    return res.status(400).json({ error: "Missing prompt or messages" });
   }
 
   let browser = null;
@@ -39,14 +48,14 @@ export default async function handler(req, res) {
 
     await page.waitForFunction("window.puter !== undefined", { timeout: 30000 });
 
-    const raw = await page.evaluate(async (prompt) => {
+    const raw = await page.evaluate(async ({ finalPrompt, model }) => {
       try {
-        const r = await window.puter.ai.chat(prompt, { model: "perplexity/sonar" });
+        const r = await window.puter.ai.chat(finalPrompt, { model: model || "perplexity/sonar" });
         return JSON.stringify(r);
       } catch (err) {
         return JSON.stringify({ __puter_error: err?.message || String(err) });
       }
-    }, prompt);
+    }, { finalPrompt, model });
 
     let answer;
     try {
