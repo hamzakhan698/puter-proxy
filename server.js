@@ -4,6 +4,11 @@ import puppeteer from "puppeteer";
 const app = express();
 app.use(express.json());
 
+// ✅ Root route to confirm the service is running
+app.get("/", (req, res) => {
+  res.send("✅ Puter Proxy is running. Use POST /chat");
+});
+
 app.post("/chat", async (req, res) => {
   const auth = req.headers.authorization || "";
   if (!auth.startsWith("Bearer ") || auth.split(" ")[1] !== process.env.PROXY_SECRET) {
