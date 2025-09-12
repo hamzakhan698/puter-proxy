@@ -4,7 +4,6 @@ import puppeteer from "puppeteer";
 const app = express();
 app.use(express.json());
 
-// ✅ Root route to confirm the service is running
 app.get("/", (req, res) => {
   res.send("✅ Puter Proxy is running. Use POST /chat");
 });
@@ -16,45 +15,49 @@ app.post("/chat", async (req, res) => {
   }
 
   const { prompt, message, q, model, messages } = req.body;
-
   let finalPrompt = prompt || message || q;
   if (!finalPrompt && Array.isArray(messages)) {
     finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
   }
-
   if (!finalPrompt) {
     return res.status(400).json({ error: "Missing prompt or messages" });
   }
 
   let browser;
   try {
+    console.log("🚀 Launching browser...");
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      protocolTimeout: 120000 // 2 minutes max for browser protocol calls
+      protocolTimeout: 180000 // 3 minutes max
     });
 
     const page = await browser.newPage();
-    page.setDefaultTimeout(60000); // Default 60s for all waits
+    page.setDefaultTimeout(90000);
 
+    console.log("📄 Loading blank page with Puter.js...");
     const html = `
       <!doctype html>
       <html>
-        <head>
-          <meta charset="utf-8"/>
-          <script src="https://js.puter.com/v2/"></script>
-        </head>
+        <head><script src="https://js.puter.com/v2/"></script></head>
         <body></body>
       </html>`;
-    await page.setContent(html, { waitUntil: "load" });
+    await page.setContent(html, { waitUntil: "domcontentloaded" });
 
-    // Wait up to 60s for Puter.js to load
+    console.log("⏳ Waiting for window.puter...");
     await page.waitForFunction("window.puter !== undefined", { timeout: 60000 });
+    console.log("✅ window.puter loaded");
 
+    console.log("💬 Sending prompt to puter.ai.chat:", finalPrompt.slice(0, 80));
     const raw = await page.evaluate(async ({ finalPrompt, model }) => {
       try {
-        const r = await window.puter.ai.chat(finalPrompt, { model: model || "perplexity/sonar" });
-        return JSON.stringify(r);
+        const result = await Promise.race([
+          window.puter.ai.chat(finalPrompt, { model: model || "perplexity/sonar" }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout inside browser eval")), 60000)
+          )
+        ]);
+        return JSON.stringify(result);
       } catch (err) {
         return JSON.stringify({ __puter_error: err?.message || String(err) });
       }
@@ -69,6 +72,7 @@ app.post("/chat", async (req, res) => {
 
     res.json({ ok: true, answer });
   } catch (err) {
+    console.error("❌ Error in /chat:", err);
     res.status(500).json({ error: err.message || String(err) });
   } finally {
     if (browser) await browser.close();
