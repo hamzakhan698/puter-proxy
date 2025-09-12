@@ -21,22 +21,21 @@ app.post("/chat", async (req, res) => {
   if (!finalPrompt && Array.isArray(messages)) {
     finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
   }
+
   if (!finalPrompt) {
     return res.status(400).json({ error: "Missing prompt or messages" });
   }
 
   let browser;
   try {
-    console.log("🚀 Launching Playwright Chromium...");
     browser = await chromium.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     const page = await browser.newPage();
-    page.setDefaultTimeout(60000);
+    page.setDefaultTimeout(60000); // Increase default timeout
 
-    console.log("📄 Loading blank page with Puter.js...");
     const html = `
       <!doctype html>
       <html>
@@ -46,26 +45,27 @@ app.post("/chat", async (req, res) => {
         </head>
         <body></body>
       </html>`;
-    await page.setContent(html, { waitUntil: "domcontentloaded" });
+    await page.setContent(html, { waitUntil: "load", timeout: 60000 });
 
-    console.log("⏳ Waiting for window.puter...");
-    await page.waitForFunction("window.puter !== undefined", { timeout: 30000 });
-    console.log("✅ window.puter loaded");
+    // Wait until puter.ai.chat exists
+    await page.waitForFunction(
+      "window.puter && window.puter.ai && typeof window.puter.ai.chat === 'function'",
+      { timeout: 60000 }
+    );
 
-    console.log("💬 Sending prompt to puter.ai.chat:", finalPrompt.slice(0, 80));
-    const raw = await page.evaluate(async ({ finalPrompt, model }) => {
-      try {
-        const result = await Promise.race([
-          window.puter.ai.chat(finalPrompt, { model: model || "perplexity/sonar" }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout inside browser eval")), 45000)
-          )
-        ]);
-        return JSON.stringify(result);
-      } catch (err) {
-        return JSON.stringify({ __puter_error: err?.message || String(err) });
-      }
-    }, { finalPrompt, model });
+    const raw = await page.evaluate(
+      async ({ finalPrompt, model }) => {
+        try {
+          const r = await window.puter.ai.chat(finalPrompt, {
+            model: model || "perplexity/sonar",
+          });
+          return JSON.stringify(r);
+        } catch (err) {
+          return JSON.stringify({ __puter_error: err?.message || String(err) });
+        }
+      },
+      { finalPrompt, model }
+    );
 
     let answer;
     try {
@@ -76,14 +76,11 @@ app.post("/chat", async (req, res) => {
 
     res.json({ ok: true, answer });
   } catch (err) {
-    console.error("❌ Error in /chat:", err);
     res.status(500).json({ error: err.message || String(err) });
   } finally {
     if (browser) await browser.close();
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
