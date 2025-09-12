@@ -1,11 +1,12 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import { chromium } from "playwright";
 
 const app = express();
 app.use(express.json());
 
+// ✅ Root route to confirm the service is running
 app.get("/", (req, res) => {
-  res.send("✅ Puter Proxy is running. Use POST /chat");
+  res.send("✅ Puter Proxy is running (Playwright). Use POST /chat");
 });
 
 app.post("/chat", async (req, res) => {
@@ -15,6 +16,7 @@ app.post("/chat", async (req, res) => {
   }
 
   const { prompt, message, q, model, messages } = req.body;
+
   let finalPrompt = prompt || message || q;
   if (!finalPrompt && Array.isArray(messages)) {
     finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
@@ -25,27 +27,29 @@ app.post("/chat", async (req, res) => {
 
   let browser;
   try {
-    console.log("🚀 Launching browser...");
-    browser = await puppeteer.launch({
+    console.log("🚀 Launching Playwright Chromium...");
+    browser = await chromium.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      protocolTimeout: 180000 // 3 minutes max
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
     const page = await browser.newPage();
-    page.setDefaultTimeout(90000);
+    page.setDefaultTimeout(60000);
 
     console.log("📄 Loading blank page with Puter.js...");
     const html = `
       <!doctype html>
       <html>
-        <head><script src="https://js.puter.com/v2/"></script></head>
+        <head>
+          <meta charset="utf-8"/>
+          <script src="https://js.puter.com/v2/"></script>
+        </head>
         <body></body>
       </html>`;
     await page.setContent(html, { waitUntil: "domcontentloaded" });
 
     console.log("⏳ Waiting for window.puter...");
-    await page.waitForFunction("window.puter !== undefined", { timeout: 60000 });
+    await page.waitForFunction("window.puter !== undefined", { timeout: 30000 });
     console.log("✅ window.puter loaded");
 
     console.log("💬 Sending prompt to puter.ai.chat:", finalPrompt.slice(0, 80));
@@ -54,7 +58,7 @@ app.post("/chat", async (req, res) => {
         const result = await Promise.race([
           window.puter.ai.chat(finalPrompt, { model: model || "perplexity/sonar" }),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout inside browser eval")), 60000)
+            setTimeout(() => reject(new Error("Timeout inside browser eval")), 45000)
           )
         ]);
         return JSON.stringify(result);
