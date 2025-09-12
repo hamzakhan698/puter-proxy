@@ -7,12 +7,17 @@ const SECRET = process.env.PROXY_SECRET || "change_this_secret";
 let browser;
 
 async function startBrowser() {
+  const executablePath =
+    process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium";
+
+  console.log("Launching Puppeteer with:", executablePath);
+
   browser = await puppeteer.launch({
     headless: true,
-    executablePath: "/usr/bin/chromium-browser",  // use system Chromium
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-  console.log("Puppeteer launched with system Chromium");
+  console.log("✅ Puppeteer launched with system Chromium");
 }
 
 const app = express();
@@ -24,7 +29,7 @@ app.get("/", (req, res) => res.send("✅ Puter proxy is alive!"));
 // Chat endpoint
 app.post("/chat", async (req, res) => {
   try {
-    // Require Authorization header
+    // Simple Bearer token check
     const auth = req.headers.authorization || "";
     if (!auth.startsWith("Bearer ") || auth.split(" ")[1] !== SECRET) {
       return res.status(403).json({ error: "Forbidden - invalid token" });
