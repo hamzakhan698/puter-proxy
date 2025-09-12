@@ -1,4 +1,5 @@
-import chromium from "chrome-aws-lambda";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,11 +18,11 @@ export default async function handler(req, res) {
 
   let browser = null;
   try {
-    browser = await chromium.puppeteer.launch({
+    browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath,
-      headless: true,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless, // ensures headless mode works on Vercel
     });
 
     const page = await browser.newPage();
