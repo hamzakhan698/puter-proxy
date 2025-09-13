@@ -1,25 +1,12 @@
 import express from "express";
-import { chromium } from "playwright";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
 
-let browser, page;
-
-// Utility: wrap any promise with a timeout
-function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const id = setTimeout(() => reject(new Error("Timeout after " + ms + "ms")), ms);
-    promise.then(
-      (res) => { clearTimeout(id); resolve(res); },
-      (err) => { clearTimeout(id); reject(err); }
-    );
-  });
-}
-
-// ✅ Root route to confirm service is alive
+// ✅ Root route
 app.get("/", (req, res) => {
-  res.send("✅ Puter Proxy is running (persistent Playwright, with timeout). Use POST /chat");
+  res.send("✅ Puter Proxy (fetch version, no Playwright). Use POST /chat");
 });
 
 app.post("/chat", async (req, res) => {
@@ -40,54 +27,28 @@ app.post("/chat", async (req, res) => {
   }
 
   try {
-    // Launch browser only once and reuse it
-    if (!browser) {
-      browser = await chromium.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
-      page = await browser.newPage();
-      await page.setContent(
-        `<!doctype html>
-         <html><head>
-         <meta charset="utf-8"/>
-         <script src="https://js.puter.com/v2/"></script>
-         </head><body></body></html>`,
-        { waitUntil: "load", timeout: 60000 }
-      );
-      await page.waitForFunction(
-        "window.puter && window.puter.ai && typeof window.puter.ai.chat === 'function'",
-        { timeout: 60000 }
-      );
+    // ⚡ Direct call to Perplexity API (same backend Puter.js uses)
+    const response = await fetch("https://www.perplexity.ai/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0", // mimic browser
+      },
+      body: JSON.stringify({
+        model: model || "perplexity/sonar",
+        messages: [
+          { role: "user", content: finalPrompt }
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Perplexity API error: ${response.status}`);
     }
 
-    // Evaluate inside the browser with timeout
-    const raw = await withTimeout(
-      page.evaluate(
-        async ({ finalPrompt, model }) => {
-          try {
-            const r = await window.puter.ai.chat(finalPrompt, {
-              model: model || "perplexity/sonar",
-            });
-            return JSON.stringify(r);
-          } catch (err) {
-            return JSON.stringify({ __puter_error: err?.message || String(err) });
-          }
-        },
-        { finalPrompt, model }
-      ),
-      60000 // 60s timeout
-    );
+    const data = await response.json();
 
-    let answer;
-    try {
-      answer = JSON.parse(raw);
-    } catch {
-      answer = raw;
-    }
-
-    res.json({ ok: true, answer });
-
+    res.json({ ok: true, answer: data });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }
