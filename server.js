@@ -4,9 +4,8 @@ import fetch from "node-fetch";
 const app = express();
 app.use(express.json());
 
-// ✅ Root route
 app.get("/", (req, res) => {
-  res.send("✅ Puter Proxy (fetch version, no Playwright). Use POST /chat");
+  res.send("✅ Puter Proxy (official API). Use POST /chat");
 });
 
 app.post("/chat", async (req, res) => {
@@ -18,27 +17,25 @@ app.post("/chat", async (req, res) => {
   const { prompt, message, q, model, messages } = req.body;
 
   let finalPrompt = prompt || message || q;
-  if (!finalPrompt && Array.isArray(messages)) {
-    finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
+  let finalMessages = messages;
+  if (!finalMessages && finalPrompt) {
+    finalMessages = [{ role: "user", content: finalPrompt }];
   }
 
-  if (!finalPrompt) {
+  if (!finalMessages) {
     return res.status(400).json({ error: "Missing prompt or messages" });
   }
 
   try {
-    // ⚡ Direct call to Perplexity API (same backend Puter.js uses)
-    const response = await fetch("https://www.perplexity.ai/api/chat", {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0", // mimic browser
+        "Authorization": `Bearer ${process.env.PPLX_API_KEY}`,
       },
       body: JSON.stringify({
-        model: model || "perplexity/sonar",
-        messages: [
-          { role: "user", content: finalPrompt }
-        ],
+        model: model || "sonar-small-chat",
+        messages: finalMessages,
       }),
     });
 
@@ -47,7 +44,6 @@ app.post("/chat", async (req, res) => {
     }
 
     const data = await response.json();
-
     res.json({ ok: true, answer: data });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
