@@ -1,13 +1,43 @@
 import express from "express";
-import fetch from "node-fetch";
+import { chromium } from "playwright";
 
 const app = express();
 app.use(express.json());
 
+// Persistent browser to reduce startup delays
+let browser;
+let page;
+
+async function initBrowser() {
+  if (!browser) {
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    page = await browser.newPage();
+    await page.setContent(
+      `<!doctype html>
+      <html>
+        <head><meta charset="utf-8"/></head>
+        <body><script src="https://js.puter.com/v2/"></script></body>
+      </html>`,
+      { waitUntil: "load", timeout: 60000 }
+    );
+
+    await page.waitForFunction(
+      "window.puter && window.puter.ai && typeof window.puter.ai.chat === 'function'",
+      { timeout: 60000 }
+    );
+    console.log("✅ Browser initialized and Puter.js ready");
+  }
+}
+
+// Root route
 app.get("/", (req, res) => {
-  res.send("✅ Puter Proxy (official API). Use POST /chat");
+  res.send("✅ Puter Proxy running on Fly.io (Perplexity). Use POST /chat");
 });
 
+// Chat route
 app.post("/chat", async (req, res) => {
   const auth = req.headers.authorization || "";
   if (!auth.startsWith("Bearer ") || auth.split(" ")[1] !== process.env.PROXY_SECRET) {
@@ -17,35 +47,41 @@ app.post("/chat", async (req, res) => {
   const { prompt, message, q, model, messages } = req.body;
 
   let finalPrompt = prompt || message || q;
-  let finalMessages = messages;
-  if (!finalMessages && finalPrompt) {
-    finalMessages = [{ role: "user", content: finalPrompt }];
+  if (!finalPrompt && Array.isArray(messages)) {
+    finalPrompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
   }
 
-  if (!finalMessages) {
+  if (!finalPrompt) {
     return res.status(400).json({ error: "Missing prompt or messages" });
   }
 
   try {
-    const response = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.PPLX_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: model || "sonar-small-chat",
-        messages: finalMessages,
-      }),
-    });
+    await initBrowser();
 
-    if (!response.ok) {
-      throw new Error(`Perplexity API error: ${response.status}`);
+    const raw = await page.evaluate(
+      async ({ finalPrompt, model }) => {
+        try {
+          const r = await window.puter.ai.chat(finalPrompt, {
+            model: model || "perplexity/sonar",
+          });
+          return JSON.stringify(r);
+        } catch (err) {
+          return JSON.stringify({ __puter_error: err?.message || String(err) });
+        }
+      },
+      { finalPrompt, model }
+    );
+
+    let answer;
+    try {
+      answer = JSON.parse(raw);
+    } catch {
+      answer = raw;
     }
 
-    const data = await response.json();
-    res.json({ ok: true, answer: data });
+    res.json({ ok: true, answer });
   } catch (err) {
+    console.error("❌ Error:", err);
     res.status(500).json({ error: err.message || String(err) });
   }
 });
